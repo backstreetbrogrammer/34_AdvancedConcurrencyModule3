@@ -154,77 +154,52 @@ synchronization with the `this` keyword.
 Untrusted code can obtain and indefinitely hold the intrinsic lock of an accessible class. Consequently, this can result
 in a deadlock situation.
 
-Example of bad code practice:
+It's recommended to synchronize on a **private final** instance of the `Object` class. Such an object will be
+inaccessible to outside untrusted code that may otherwise interact with our public classes, thus reducing the
+possibility that such interactions could result in deadlock.
 
-```java
-public class Student {
-
-    private String name;
-    private String course;
-
-    // getters and constructors
-
-    public synchronized void setName(final String name) {
-        this.name = name;
-    }
-
-    public void setCourse(final String course) {
-        synchronized (this) {
-            this.course = course;
-        }
+```
+private final Object objLock = new Object();
+public void finalObjectLockSolution() {
+    synchronized (objLock) {
+        // ...
     }
 }
 ```
 
-Let's create an instance of the `Student` class and synchronize on it:
+Additionally, if a method that implements the synchronized block modifies a `static` variable, we must synchronize by
+locking on the `static` object:
 
 ```
-Student john = new Student("John", "Advanced Java");
-synchronized (john) {
-    while(true) {
-        Thread.sleep(Integer.MAX_VALUE);
+private static int staticCount = 0;
+private static final Object staticObjLock = new Object();
+public void staticVariableSolution() {
+    synchronized (staticObjLock) {
+        count++;
+        // ...
     }
 }
 ```
 
-The **untrusted** code example introduces an indefinite delay, preventing the `setName()` and `setCourse()` method
-implementations from acquiring the same lock.
+**Understanding CAS**
 
-The **solution** to prevent this vulnerability is the **private lock object**.
+Then a thread enters the critical section blocked by synchronization - at that runtime, there is NO real
+**concurrency**. Because only 1 thread is running at that time.
 
-We should use the intrinsic lock associated with the **private final** instance of the `Object` class defined within our
-class in place of the intrinsic lock of the object itself.
+This is where **CAS** can be used.
 
-Also, we should use **block** synchronization in place of **method** synchronization to add flexibility to keep
-non-synchronized code out of the block.
+**Compare and Swap** works with three parameters:
 
-```java
-public class Student {
+- a location in memory
+- an **existing** value at that location
+- a **new** value to **replace** this **existing** value
 
-    private String name;
-    private String course;
+If the **current value** at that address is the **expected value**, then it is replaced by the **new value** and returns
+`true`.
 
-    // getters and constructors
+If not, it returns `false`
 
-    private final Object objLock1 = new Object();
-    private final Object objLock2 = new Object();
-
-    public void setName(final String name) {
-        synchronized (objLock1) {
-            this.name = name;
-        }
-    }
-
-    public void setCourse(final String course) {
-        synchronized (objLock2) {
-            this.course = course;
-        }
-    }
-}
-```
-
-For better concurrency, we have granulated the locking scheme by defining **multiple private final lock** objects to
-separate our synchronization concerns for both of the methods – `setName()` and `setCourse()`.
+This is all done in a **single, atomic** assembly instruction
 
 
 
