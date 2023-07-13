@@ -37,7 +37,7 @@ So we should first check if the value of the variable is `1` as we thought and i
 If we see that the variable is `3` now, then that means someone else is working on it and so let us not touch it at this
 time.
 
-#### Interview Problem 1 (UBS): Explain cost of synchronization in Java and if we have better alternatives
+#### Interview Problem 1 (UBS): Explain cost of synchronization in Java and best practices for lock acquisition
 
 The problem in concurrent programming is the concurrent access to **shared** memory. We used **synchronization** to
 handle that. But in certain cases, we have **more** tools.
@@ -199,7 +199,149 @@ If the **current value** at that address is the **expected value**, then it is r
 
 If not, it returns `false`
 
-This is all done in a **single, atomic** assembly instruction
+This is all done in a **single, atomic** assembly instruction.
+
+**Example with `AtomicInteger`**:
+
+```
+        // Create an atomic integer
+        final AtomicInteger counter = new AtomicInteger(10);
+        // Safely increment the value
+        final int newValue = counter.incrementAndGet();
+```
+
+This is a safe incrementation of a counter without synchronization.
+
+Under the hood, the Java API **tries** to **apply** the incrementation.
+
+The CASing tells the calling code if the incrementation **failed**.
+
+If it did, the API **tries again**.
+
+#### Interview Problem 2 (Barclays): Demonstrate CAS operation without using Java Atomic API
+
+Demonstrate the Compare-And-Swap (CAS) operation using simple locks.
+
+**Solution**:
+
+First, lets implement a simulated CAS using locks:
+
+```java
+public class CASUsingLocks {
+
+    private int value;
+
+    public synchronized int get() {
+        return value;
+    }
+
+    public synchronized int compareAndSwap(final int expectedValue, final int newValue) {
+        final int oldValue = value;
+        if (oldValue == expectedValue) {
+            value = newValue;
+        }
+        return oldValue;
+    }
+
+    public synchronized boolean compareAndSet(final int expectedValue, final int newValue) {
+        return expectedValue == compareAndSwap(expectedValue, newValue);
+    }
+}
+```
+
+Now, let's use it for implementation of a thread-safe counter.
+
+```java
+public class CounterUsingCAS {
+
+    private final CASUsingLocks value = new CASUsingLocks();
+
+    public int get() {
+        return value.get();
+    }
+
+    public void increment() {
+        int v;
+
+        do {
+            v = value.get();
+        } while (v != value.compareAndSwap(v, v + 1));
+
+    }
+}
+```
+
+Unit Test class:
+
+```java
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+public class CounterUsingCASTest {
+
+    @Test
+    @DisplayName("Demonstrate thread safe counter using CAS")
+    void demonstrateThreadSafeCounterUsingCAS() throws InterruptedException {
+        final CounterUsingCAS counter = new CounterUsingCAS();
+        final Runnable r = () -> {
+            for (int i = 0; i < 1_000; i++) {
+                counter.increment();
+            }
+        };
+
+        final Thread[] threads = new Thread[1_000];
+        for (int i = 0; i < threads.length; i++) {
+            threads[i] = new Thread(r);
+            threads[i].start();
+        }
+
+        for (int i = 0; i < threads.length; i++) {
+            threads[i].join();
+        }
+
+        System.out.printf("Counter Value = %d%n", counter.get());
+    }
+}
+```
+
+Output will always be correct:
+
+```
+Counter Value = 1000000
+```
+
+#### Java Atomic API
+
+**AtomicBoolean**
+
+- get(), set()
+- getAndSet(value)
+- compareAndSet(expected, value)
+
+**AtomicInteger**, **AtomicLong**
+
+- get(), set()
+- getAndSet(value)
+- compareAndSet(expected, value)
+- getAndUpdate(unaryOp), updateAndGet(unaryOp)
+- getAndIncrement(), getAndDecrement()
+- getAndAdd(value), addAndGet(value)
+- getAndAccumulate(value, binOp), accumulateAndGet(value, binOp)
+
+**AtomicReference<V>**
+
+- get(), set()
+- getAndSet(value)
+- getAndUpdate(unaryOp), updateAndGet(unaryOp)
+- getAndAccumulate(value, binOp), accumulateAndGet(value, binOp)
+- compareAndSet(expected, value)
+
+**Summary**
+
+- CASing works well when concurrency is not "too" high
+- CASing: many tries until it is accepted…
+- Synchronization: waiting threads until one can enter the synchronized block
+- CASing may create load on the memory and / or CPU
 
 
 
