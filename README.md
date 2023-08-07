@@ -340,10 +340,347 @@ Counter Value = 1000000
 
 - CASing works well when concurrency is not "too" high
 - CASing: many tries until it is accepted…
+- CASing is different from synchronization and can lead to better performances
 - Synchronization: waiting threads until one can enter the synchronized block
 - CASing may create load on the memory and / or CPU
 
+#### Interview Problem 3 (Goldman Sachs): Implement thread-safe concurrent Stack using CAS
 
+A stack is a linear data structure that follows the LIFO - **Last-In, First-Out** principle. That means the objects can
+be inserted or removed only at one end of it, also called a **top**. Last object inserted will be the first object to
+get.
+
+![Stack](Stack.PNG)
+
+Implement a thread-safe concurrent Stack using CAS.
+
+Following 3 methods should be implemented from the `StackI` interface.
+
+```java
+public interface StackI<T> {
+
+    T pop();
+
+    void push(T item);
+
+    T peek();
+
+}
+```
+
+**SOLUTION**
+
+Let's create a `StackNode` first to be used in the concurrent stack.
+
+```java
+public class StackNode<T> {
+
+    private T data;
+    private StackNode<T> next;
+
+    public StackNode(final T data) {
+        this.data = data;
+    }
+
+    public T getData() {
+        return data;
+    }
+
+    public void setData(final T data) {
+        this.data = data;
+    }
+
+    public StackNode<T> getNext() {
+        return next;
+    }
+
+    public void setNext(final StackNode<T> next) {
+        this.next = next;
+    }
+}
+```
+
+Final `ConcurrentStackUsingCAS` implementation:
+
+```java
+import java.util.concurrent.atomic.AtomicReference;
+
+public class ConcurrentStackUsingCAS<T> implements StackI<T> {
+    private final AtomicReference<StackNode<T>> top = new AtomicReference<>();
+
+    @Override
+    public T pop() {
+        StackNode<T> oldHead;
+        StackNode<T> newHead;
+        do {
+            oldHead = top.get();
+            if (oldHead == null) {
+                return null;
+            }
+            newHead = oldHead.getNext();
+        } while (!top.compareAndSet(oldHead, newHead));
+        return oldHead.getData();
+    }
+
+    @Override
+    public void push(final T item) {
+        final StackNode<T> newHead = new StackNode<>(item);
+        StackNode<T> oldHead;
+        do {
+            oldHead = top.get();
+            newHead.setNext(oldHead);
+        } while (!top.compareAndSet(oldHead, newHead));
+    }
+
+    @Override
+    public T peek() {
+        if (top.get() == null) {
+            return null;
+        }
+        return top.get().getData();
+    }
+}
+```
+
+**Unit Test**
+
+```java
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class ConcurrentStackUsingCASTest {
+
+    private final ConcurrentStackUsingCAS<String> myStack = new ConcurrentStackUsingCAS<>();
+
+    @Test
+    @DisplayName("Test ConcurrentStack CAS implementation using single thread")
+    void testConcurrentStackUsingCAS_SingleThreaded() {
+        myStack.push("A");
+        myStack.push("B");
+        myStack.push("C");
+        myStack.push("D");
+
+        assertEquals("D", myStack.peek());
+        assertEquals("D", myStack.pop());
+        assertEquals("C", myStack.pop());
+        assertEquals("B", myStack.peek());
+
+        myStack.push("E");
+
+        assertEquals("E", myStack.pop());
+        assertEquals("B", myStack.peek());
+    }
+
+    @Test
+    @DisplayName("Test ConcurrentStack CAS implementation using multiple threads")
+    void testConcurrentStackUsingCAS_MultiThreaded() throws InterruptedException {
+        final var latch = new CountDownLatch(2);
+        final Thread thread1 = new Thread(() -> {
+            myStack.push("A");
+            myStack.push("B");
+            myStack.push("C");
+            myStack.push("D");
+            myStack.push("E");
+            myStack.push("F");
+            latch.countDown();
+        });
+        thread1.start();
+        TimeUnit.SECONDS.sleep(1L);
+
+        final Thread thread2 = new Thread(() -> {
+            myStack.pop(); // F
+            latch.countDown();
+        });
+        thread2.start();
+
+        latch.await();
+
+        assertEquals("E", myStack.peek());
+        assertEquals("E", myStack.pop());
+
+        myStack.push("G");
+        assertEquals("G", myStack.pop());
+        assertEquals("D", myStack.peek());
+    }
+}
+```
+
+#### Adders and Accumulators added in Java 8
+
+All the methods are built on the "modify and get" or "get and modify". Sometimes we do not need the "get" part at each
+modification.
+
+**Adders** and **Accumulators** are created to be very efficient in the multithreaded environment and both leverage very
+clever tactics to be lock-free and still remain thread-safe.
+
+They do not return the updated value - thus, it can distribute the update on different calls and merge the results on
+a **get** call.
+
+These are tailored for high concurrency. If there are less number of threads - it may not be that useful.
+
+**Dynamic Striping**
+
+All adder and accumulator implementations in Java are inheriting from base-class called `Striped64`.
+
+Instead of using just one value to maintain the current state, this class uses an array of states to distribute the
+contention to different memory locations.
+
+![Dynamic Striping](DynamicStriping.PNG)
+
+Different threads are updating different memory locations. Since we're using an array (that is, stripes) of states, this
+idea is called dynamic striping.
+
+We expect dynamic striping to improve the overall performance. However, the way the JVM allocates these states may have
+a counterproductive effect.
+
+To be more specific, the JVM may allocate those states near each other in the heap. This means that a few states can
+reside in the same CPU cache line. Therefore, updating one memory location may cause a cache miss to its nearby states.
+This phenomenon, known as false sharing, will hurt the performance.
+
+To prevent false sharing. the Striped64 implementation adds enough padding around each state to make sure that each
+state resides in its own cache line:
+
+![Striping Padding](StripingPadded.PNG)
+
+The `@Contended` annotation is responsible for adding this padding. The padding improves performance at the expense of
+more memory consumption.
+
+*LongAdder**
+
+API
+
+- increment(), decrement()
+- add(long)
+- sum(), longValue(), intValue()
+- sumThenReset()
+
+Let's consider some logic that's incrementing some values very often, where using an `AtomicLong` can be a bottleneck.
+This uses a CAS operation, which – under heavy contention – can lead to a lot of wasted CPU cycles.
+
+`LongAdder` uses a very clever trick to reduce contention between threads, when these are incrementing it.
+
+When we want to increment an instance of the `LongAdder`, we need to call the `increment()` method. That implementation
+keeps an array of counters that can grow on demand.
+
+When more threads are calling `increment()`, the array will be longer. Each record in the array can be updated
+separately – thus, reducing the contention.
+
+Due to that fact, the `LongAdder` is a very efficient way to increment a counter from multiple threads.
+
+```java
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.IntStream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class LongAdderTest {
+
+    @Test
+    @DisplayName("Test LongAdder demo")
+    void testLongAdder() throws InterruptedException {
+        final LongAdder counter = new LongAdder();
+        final ExecutorService executorService = Executors.newFixedThreadPool(8);
+
+        final int numberOfThreads = 4;
+        final int numberOfIncrements = 100;
+
+        final Runnable incrementAction = () -> IntStream
+                .range(0, numberOfIncrements)
+                .forEach(i -> counter.increment());
+
+        for (int i = 0; i < numberOfThreads; i++) {
+            executorService.execute(incrementAction);
+        }
+
+        TimeUnit.SECONDS.sleep(1L);
+
+        assertEquals(counter.sum(), numberOfIncrements * numberOfThreads);
+        assertEquals(counter.longValue(), numberOfIncrements * numberOfThreads);
+
+        assertEquals(counter.sumThenReset(), numberOfIncrements * numberOfThreads);
+        assertEquals(counter.sum(), 0);
+    }
+}
+```
+
+**LongAccumulator** - built on a binary operator
+
+API
+
+- accumulate(long)
+- get()
+- intValue(), longValue(), floatValue(), doubleValue()
+- getThenReset()
+
+`LongAccumulator` can be used to accumulate results according to the supplied `LongBinaryOperator` – this works
+similarly to the `reduce()` operation from Stream API.
+
+The instance of the `LongAccumulator` can be created by supplying the `LongBinaryOperator` and the initial value to its
+constructor. The important thing to remember that LongAccumulator will work correctly if we supply it with a commutative
+function where the **order of accumulation** does not matter.
+
+```
+final LongAccumulator accumulator = new LongAccumulator(Long::sum, 0L);
+```
+
+We're creating a `LongAccumulator` which will add a new value to the value that was already in the accumulator.
+
+We are setting the initial value of the `LongAccumulator` to **zero**, so in the first call of the `accumulate()`
+method, the `previousValue` will have a zero value.
+
+Firstly, it executes an action defined as a `LongBinaryOperator`, and then it checks if the `previousValue` changed. If
+it was changed, the action is executed again with the new value. If not, it succeeds in changing the value that is
+stored in the accumulator.
+
+```java
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAccumulator;
+import java.util.stream.IntStream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class LongAccumulatorTest {
+
+    @Test
+    @DisplayName("Test LongAccumulator demo")
+    void testLongAccumulator() throws InterruptedException {
+        final LongAccumulator accumulator = new LongAccumulator(Long::sum, 0L);
+        final ExecutorService executorService = Executors.newFixedThreadPool(8);
+
+        final int numberOfThreads = 4;
+        final int numberOfIncrements = 100;
+
+        final Runnable accumulateAction = () -> IntStream
+                .rangeClosed(0, numberOfIncrements)
+                .forEach(accumulator::accumulate);
+
+        for (int i = 0; i < numberOfThreads; i++) {
+            executorService.execute(accumulateAction);
+        }
+
+        TimeUnit.SECONDS.sleep(1L);
+
+        assertEquals(accumulator.get(), 20200);
+        assertEquals(accumulator.longValue(), 20200);
+    }
+}
+```
 
 ---
 
