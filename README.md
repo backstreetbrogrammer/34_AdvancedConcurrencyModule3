@@ -510,7 +510,7 @@ public class ConcurrentStackUsingCASTest {
 }
 ```
 
-#### Adders and Accumulators added in Java 8
+#### Adders and Accumulators introduced in Java 8
 
 All the methods are built on the "modify and get" or "get and modify". Sometimes we do not need the "get" part at each
 modification.
@@ -521,7 +521,7 @@ clever tactics to be lock-free and still remain thread-safe.
 They do not return the updated value - thus, it can distribute the update on different calls and merge the results on
 a **get** call.
 
-These are tailored for high concurrency. If there are less number of threads - it may not be that useful.
+These are tailored for high concurrency. If there are few number of threads - it may not be that useful.
 
 **Dynamic Striping**
 
@@ -634,7 +634,7 @@ function where the **order of accumulation** does not matter.
 final LongAccumulator accumulator = new LongAccumulator(Long::sum, 0L);
 ```
 
-We're creating a `LongAccumulator` which will add a new value to the value that was already in the accumulator.
+We are creating a `LongAccumulator` which will add a new value to the value that was already in the accumulator.
 
 We are setting the initial value of the `LongAccumulator` to **zero**, so in the first call of the `accumulate()`
 method, the `previousValue` will have a zero value.
@@ -686,4 +686,58 @@ public class LongAccumulatorTest {
 
 ### Chapter 02. Concurrent Collections
 
----
+We will discuss concurrent **collections** and **maps** and their implementations.
+
+- **Collections**: Queue, BlockingQueue
+- **Map**: ConcurrentMap
+
+![ConcurrentCollections](ConcurrentCollections.PNG)
+
+![Maps](Maps.PNG)
+
+#### Concurrent Lists
+
+**Vector and Stack**
+
+These legacy classes should not be used as these are poorly implemented. All the methods are synchronized - meaning that
+no thread can read or write without holding the lock.
+
+In modern applications - where we are dealing with 100s of threads - `Vector` and `Stack` classes will severely impact
+the performance.
+
+**Copy on Write**
+
+Has the similar semantics as read-write lock, i.e. no locking is needed for **read** operations.
+
+Whenever any **write** operation is done -> its done on the **copy** of the original list or set -> then the copy
+replaces the original list or set **atomically** (using synchronization).
+
+The iterator will not reflect additions, removals, or changes to the list since the iterator was created.
+
+Main points:
+
+- Exists for list and set = `CopyOnWriteArrayList`, `CopyOnWriteArraySet`
+- No locking for read operations
+- Write operations create a new structure
+- The new structure then replaces the previous one
+- Useful when the list or set is created once at the beginning of the application run and then only read operations are
+  done from the list or set
+
+**Queues and Stacks**
+
+There are 2 kinds of queues:
+
+- FIFO (First In, First Out) - Queue
+- LIFO (Last In, First Out) - Stack
+
+In JDK, we have 2 interfaces:
+
+- `Queue`: queue
+- `Deque`: both a queue and a stack (remember to NOT use `Stack` legacy class)
+
+Concrete classes:
+
+- `ArrayBlockingQueue`: a bounded blocking queue built on an array
+- `ConcurrentLinkedQueue`: an unbounded blocking queue
+
+
