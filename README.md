@@ -727,10 +727,11 @@ Main points:
 
 There are 2 kinds of queues:
 
-- FIFO (First In, First Out) - Queue
-- LIFO (Last In, First Out) - Stack
+- FIFO (First In, First Out) - **Queue**
+  ![Queue](Queue.PNG)
 
-![Queue](Queue.PNG)
+- LIFO (Last In, First Out) - **Stack**
+  ![Stack](Stack.PNG)
 
 In JDK, we have 2 interfaces:
 
@@ -754,7 +755,7 @@ queue.
 - What happens if the queue / stack is **full**, and we need to **add** an element to it?
 - What happens if the queue / stack is **empty**, and we need to **get** an element from it?
 
-**Adding an Element to a Queue That Is Full**
+**Adding an element at the tail of a Queue that is full**
 
 ```
 boolean add(E e); // fail: IllegalArgumentException
@@ -776,9 +777,102 @@ So there are 2 behaviors:
 - Failing with an exception
 - Failing and returning false
 
-And for blocking queue:
+And for **blocking** queue:
 
 - Blocking until the queue can accept the element
+
+**Deque and BlockingDeque**
+
+Deque can accept elements at the **head** of a queue:
+
+- `addFirst()`
+- `offerFirst()`
+
+And for the BlockingDeque
+
+- `putFirst()`
+
+Other methods:
+
+Queues have also **get** and **peek** operations
+
+**Queue**:
+
+- Returns null: poll() and peek()
+- Exception: remove() and element()
+
+**BlockingQueue**:
+
+- blocks: take()
+
+**Deque**:
+
+- Returns null: pollLast() and peekLast()
+- Exception: removeLast() and getLast()
+
+**BlockingDeque**:
+
+- blocks: takeLast()
+
+To summarize,
+
+- Four different types of queues (Queue, BlockingQueue, Deque, BlockingDeque): they may be blocking or not, may offer
+  access from both sides or not
+- Different types of failure: special value, exception, blocking
+
+That makes the API quite complex, with a lot of methods.
+
+#### BlockingQueue Deep Dive
+
+We can distinguish two types of BlockingQueue:
+
+- unbounded queue – can grow almost indefinitely
+- bounded queue – with maximal capacity defined
+
+**Unbounded Queue**
+
+Example code snippet to create a blocking deque:
+
+```
+BlockingQueue<String> blockingQueue = new LinkedBlockingDeque<>();
+```
+
+The capacity of `blockingQueue` will be set to `Integer.MAX_VALUE`. All operations that add an element to the unbounded
+queue will **NEVER** block, thus it could grow to a very large size.
+
+Disadvantage is if consumers are not able to consume messages -> producers will keep on producing the item to the
+unbounded queue causing memory issues or even `OutOfMemory` exception.
+
+**Bounded Queue**
+
+Just using the overloaded constructor and giving the capacity:
+
+```
+BlockingQueue<String> blockingQueue = new LinkedBlockingDeque<>(10); // capacity = 10
+```
+
+When a producer tries to add an element to an already full queue, depending on a method that was used to add it
+(`offer()`, `add()` or `put()`), it will block until space for inserting object becomes available. Otherwise, the
+operations will fail.
+
+Using bounded queue is a good way to design concurrent programs because when we insert an element to an already full
+queue, that operations need to wait until consumers catch up and make some space available in the queue. It gives us
+**throttling** without any effort on our part.
+
+**Adding Elements**
+
+- **add()** – returns true if insertion was successful, otherwise throws an `IllegalStateException`
+- **put()** – inserts the specified element into a queue, waiting for a free slot if necessary
+- **offer()** – returns true if insertion was successful, otherwise false
+- **offer(E e, long timeout, TimeUnit unit)** – tries to insert element into a queue and waits for an available slot
+  within a specified timeout
+
+**Retrieving Elements**
+
+- **take()** – waits for a head element of a queue and removes it. If the queue is empty, it blocks and waits for an
+  element to become available
+- **poll(long timeout, TimeUnit unit)** – retrieves and removes the head of the queue, waiting up to the specified wait
+  time if necessary for an element to become available. Returns null after a timeout
 
 #### Interview Problem 4 (KBC Bank): Implement thread-safe blocking queue
 
@@ -856,3 +950,18 @@ public class BlockingQueue<E> {
 
 }
 ```
+
+#### Interview Problem 5 (Point72 Hedge Fund): Demonstrate poison-pill in multithreaded producer-consumer pattern
+
+The Producer will be producing a random number from 0 to 100 and will put that number in a `BlockingQueue`.
+
+We'll have multiple producer threads and use the `put()` method to block until there's space available in the queue.
+
+The important thing to remember is that we need to stop our consumer threads from waiting for an element to appear in a
+queue indefinitely.
+
+A good technique to signal from producer to the consumer that there are no more messages to process is to send a special
+message called a **poison pill**. We need to send as many poison pills as we have consumers. Then, when a consumer will
+take that special poison pill message from a queue, it will finish execution gracefully.
+
+
