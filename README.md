@@ -730,6 +730,8 @@ There are 2 kinds of queues:
 - FIFO (First In, First Out) - Queue
 - LIFO (Last In, First Out) - Stack
 
+![Queue](Queue.PNG)
+
 In JDK, we have 2 interfaces:
 
 - `Queue`: queue
@@ -740,4 +742,117 @@ Concrete classes:
 - `ArrayBlockingQueue`: a bounded blocking queue built on an array
 - `ConcurrentLinkedQueue`: an unbounded blocking queue
 
+We are in the multithreaded multicore CPU world, thus we can have many producers and consumers as we need.
 
+![ProducerConsumer](ProducerConsumer.PNG)
+
+Each of producers and consumers are in their own thread pools and a thread does not know how many elements are in the
+queue.
+
+2 conditions which we have emphasized before:
+
+- What happens if the queue / stack is **full**, and we need to **add** an element to it?
+- What happens if the queue / stack is **empty**, and we need to **get** an element from it?
+
+**Adding an Element to a Queue That Is Full**
+
+```
+boolean add(E e); // fail: IllegalArgumentException
+```
+
+```
+// fail: return false
+boolean offer(E e); 
+boolean offer(E e, timeOut, timeUnit);
+```
+
+```
+// blocks until a cell becomes available
+void put(E e);
+```
+
+So there are 2 behaviors:
+
+- Failing with an exception
+- Failing and returning false
+
+And for blocking queue:
+
+- Blocking until the queue can accept the element
+
+#### Interview Problem 4 (KBC Bank): Implement thread-safe blocking queue
+
+Implement a simple thread-safe blocking queue using List or an array as a buffer.
+
+**Solution**
+
+```java
+import java.util.LinkedList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class BlockingQueue<E> {
+    private final List<E> queue = new LinkedList<>();
+    private final int limit;
+
+    private static final Lock lock = new ReentrantLock();
+    private static final Condition notFull = lock.newCondition();
+    private static final Condition notEmpty = lock.newCondition();
+
+    public BlockingQueue(final int limit) {
+        if (limit < 1) {
+            throw new IllegalArgumentException("capacity can not be less than 1");
+        }
+        this.limit = limit;
+    }
+
+    public void enqueue(final E item) {
+        try {
+            lock.lock();
+            while (isFull()) {
+                if (!notFull.await(10, TimeUnit.MILLISECONDS)) {
+                    throw new TimeoutException("Producer time out!");
+                }
+            }
+            this.queue.add(item);
+            notEmpty.signalAll();
+        } catch (final InterruptedException | TimeoutException e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public E dequeue() {
+        try {
+            lock.lock();
+            while (isEmpty()) {
+                if (!notEmpty.await(10, TimeUnit.MILLISECONDS)) {
+                    throw new TimeoutException("Consumer time out!");
+                }
+            }
+            final E item = this.queue.remove(0);
+            notFull.signalAll();
+            return item;
+        } catch (final InterruptedException | TimeoutException e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+        return null;
+    }
+
+    private boolean isEmpty() {
+        return this.queue.size() == 0;
+    }
+
+    private boolean isFull() {
+        return this.queue.size() == this.limit;
+    }
+
+}
+```
