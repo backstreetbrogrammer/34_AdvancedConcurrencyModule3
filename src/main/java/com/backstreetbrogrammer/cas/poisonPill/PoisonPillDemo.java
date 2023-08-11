@@ -9,21 +9,26 @@ public class PoisonPillDemo {
         final int BOUND = 10;
         final int N_PRODUCERS = 4;
         final int N_CONSUMERS = Runtime.getRuntime().availableProcessors();
-        final int poisonPill = Integer.MAX_VALUE;
+        final String poisonPill = "POISON_PILL";
         final int poisonPillPerProducer = N_CONSUMERS / N_PRODUCERS;
         final int mod = N_CONSUMERS % N_PRODUCERS;
 
-        final BlockingQueue<Integer> queue = new LinkedBlockingQueue<>(BOUND);
+        final BlockingQueue<String> queue = new LinkedBlockingQueue<>(BOUND);
+
+        System.out.printf(
+                "No of producers:[%d], No of consumers:[%d], poison pill:[%s], poison pills per producer:[%d]%n",
+                N_PRODUCERS, N_CONSUMERS, poisonPill, poisonPillPerProducer);
+        System.out.println("-----------------------------");
 
         for (int i = 1; i < N_PRODUCERS; i++) {
-            new Thread(new NumbersProducer(queue, poisonPill, poisonPillPerProducer)).start();
+            new Thread(new Producer(queue, poisonPill, poisonPillPerProducer)).start();
         }
 
         for (int j = 0; j < N_CONSUMERS; j++) {
-            new Thread(new NumbersConsumer(queue, poisonPill)).start();
+            new Thread(new Consumer(queue, poisonPill)).start();
         }
 
-        new Thread(new NumbersProducer(queue, poisonPill, poisonPillPerProducer + mod)).start();
+        new Thread(new Producer(queue, poisonPill, poisonPillPerProducer + mod)).start();
     }
 
 }

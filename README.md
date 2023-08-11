@@ -798,26 +798,26 @@ Queues have also **get** and **peek** operations
 
 **Queue**:
 
-- Returns null: poll() and peek()
-- Exception: remove() and element()
+- Returns null: `poll()` and `peek()`
+- Exception: `remove()` and `element()`
 
 **BlockingQueue**:
 
-- blocks: take()
+- blocks: `take()`
 
 **Deque**:
 
-- Returns null: pollLast() and peekLast()
-- Exception: removeLast() and getLast()
+- Returns null: `pollLast()` and `peekLast()`
+- Exception: `removeLast()` and `getLast()`
 
 **BlockingDeque**:
 
-- blocks: takeLast()
+- blocks: `takeLast()`
 
 To summarize,
 
-- Four different types of queues (Queue, BlockingQueue, Deque, BlockingDeque): they may be blocking or not, may offer
-  access from both sides or not
+- Four different types of queues (`Queue`, `BlockingQueue`, `Deque`, `BlockingDeque`): they may be blocking or not, may
+  offer access from both sides or not
 - Different types of failure: special value, exception, blocking
 
 That makes the API quite complex, with a lot of methods.
@@ -953,7 +953,7 @@ public class BlockingQueue<E> {
 
 #### Interview Problem 5 (Point72 Hedge Fund): Demonstrate poison-pill in multithreaded producer-consumer pattern
 
-The Producer will be producing a random number from 0 to 100 and will put that number in a `BlockingQueue`.
+Producers will be producing random String to a `BlockingQueue`.
 
 We'll have multiple producer threads and use the `put()` method to block until there's space available in the queue.
 
@@ -963,5 +963,191 @@ queue indefinitely.
 A good technique to signal from producer to the consumer that there are no more messages to process is to send a special
 message called a **poison pill**. We need to send as many poison pills as we have consumers. Then, when a consumer will
 take that special poison pill message from a queue, it will finish execution gracefully.
+
+**Solution**
+
+`Producer` class to generate random String and put into BlockingQueue:
+
+```java
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ThreadLocalRandom;
+
+public class Producer implements Runnable {
+    private final BlockingQueue<String> queue;
+    private final String poisonPill;
+    private final int poisonPillPerProducer;
+
+    public Producer(final BlockingQueue<String> queue, final String poisonPill,
+                    final int poisonPillPerProducer) {
+        this.queue = queue;
+        this.poisonPill = poisonPill;
+        this.poisonPillPerProducer = poisonPillPerProducer;
+    }
+
+    @Override
+    public void run() {
+        try {
+            for (int i = 0; i < 10; i++) {
+                queue.put(randomString());
+            }
+            for (int j = 0; j < poisonPillPerProducer; j++) {
+                queue.put(poisonPill);
+                System.out.printf("[Producer-%s] Putting %s in the queue%n",
+                                  Thread.currentThread().getName(), poisonPill);
+            }
+        } catch (final InterruptedException ie) {
+            ie.printStackTrace();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private String randomString() {
+        final int leftLimit = 48; // numeral '0'
+        final int rightLimit = 122; // letter 'z'
+        final int targetStringLength = 10;
+
+        return ThreadLocalRandom.current().ints(leftLimit, rightLimit + 1)
+                                .filter(i -> (i <= 57 || i >= 65) && (i <= 90 || i >= 97))
+                                .limit(targetStringLength)
+                                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                                .toString();
+    }
+}
+```
+
+`Consumer` class to consume from BlockingQueue and terminate if receives poison pill:
+
+```java
+import java.util.concurrent.BlockingQueue;
+
+public class Consumer implements Runnable {
+    private final BlockingQueue<String> queue;
+    private final String poisonPill;
+
+    public Consumer(final BlockingQueue<String> queue, final String poisonPill) {
+        this.queue = queue;
+        this.poisonPill = poisonPill;
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (true) {
+                final String item = queue.take();
+                if (item.equals(poisonPill)) {
+                    System.out.printf("[Consumer-%s] Got %s - Terminating Gracefully :) %n",
+                                      Thread.currentThread().getName(), poisonPill);
+                    return;
+                }
+                System.out.printf("[Consumer-%s] consumed: %s%n", Thread.currentThread().getName(), item);
+            }
+        } catch (final InterruptedException e) {
+            e.printStackTrace();
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
+`PoisonPillDemo` class to demonstrate:
+
+```java
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+
+public class PoisonPillDemo {
+
+    public static void main(final String[] args) {
+        final int BOUND = 10;
+        final int N_PRODUCERS = 4;
+        final int N_CONSUMERS = Runtime.getRuntime().availableProcessors();
+        final String poisonPill = "POISON_PILL";
+        final int poisonPillPerProducer = N_CONSUMERS / N_PRODUCERS;
+        final int mod = N_CONSUMERS % N_PRODUCERS;
+
+        final BlockingQueue<String> queue = new LinkedBlockingQueue<>(BOUND);
+
+        System.out.printf(
+                "No of producers:[%d], No of consumers:[%d], poison pill:[%s], poison pills per producer:[%d]%n",
+                N_PRODUCERS, N_CONSUMERS, poisonPill, poisonPillPerProducer);
+        System.out.println("-----------------------------");
+
+        for (int i = 1; i < N_PRODUCERS; i++) {
+            new Thread(new Producer(queue, poisonPill, poisonPillPerProducer)).start();
+        }
+
+        for (int j = 0; j < N_CONSUMERS; j++) {
+            new Thread(new Consumer(queue, poisonPill)).start();
+        }
+
+        new Thread(new Producer(queue, poisonPill, poisonPillPerProducer + mod)).start();
+    }
+
+}
+```
+
+**Sample output:**
+
+```
+No of producers:[4], No of consumers:[4], poison pill:[POISON_PILL], poison pills per producer:[1]
+-----------------------------
+[Consumer-Thread-4] consumed: ZahHLACwmh
+[Consumer-Thread-4] consumed: SUCAqAIcF2
+[Consumer-Thread-4] consumed: vxYH8iq5DF
+[Consumer-Thread-4] consumed: aA7tM3ZYku
+[Consumer-Thread-4] consumed: z7ey10K9q7
+[Consumer-Thread-4] consumed: 5Oy6zCt7gN
+[Consumer-Thread-4] consumed: 7xcG60ZfDr
+[Consumer-Thread-4] consumed: 4vnMdVA5bZ
+[Consumer-Thread-4] consumed: y6zYoFq17D
+[Consumer-Thread-4] consumed: o43fgRooJQ
+[Consumer-Thread-4] consumed: lk7h0GeLMm
+[Consumer-Thread-4] consumed: 8LpR7hp01R
+[Consumer-Thread-4] consumed: 6dgcHnwz4i
+[Consumer-Thread-4] consumed: RZBDMxpbmH
+[Consumer-Thread-4] consumed: wI6Lllq3ZO
+[Consumer-Thread-4] consumed: zfLzGhdTUL
+[Consumer-Thread-4] consumed: FqafiZ5dU3
+[Consumer-Thread-4] consumed: awGoxmdp9v
+[Consumer-Thread-4] consumed: fQopQUDmRk
+[Consumer-Thread-4] consumed: 0vNDyb24M7
+[Consumer-Thread-4] consumed: U08Mgu4SXn
+[Consumer-Thread-4] Got POISON_PILL - Terminating Gracefully :) 
+[Consumer-Thread-3] consumed: 5tiDFu5eqb
+[Consumer-Thread-3] consumed: cm9Ssp7s4d
+[Consumer-Thread-3] consumed: Fi05V3EYcz
+[Consumer-Thread-3] consumed: Lqvqiv218r
+[Consumer-Thread-3] consumed: CNpNkQUpkW
+[Consumer-Thread-3] consumed: ZGas4SMHbk
+[Consumer-Thread-3] consumed: FtK6R6tNNZ
+[Consumer-Thread-3] Got POISON_PILL - Terminating Gracefully :) 
+[Consumer-Thread-6] consumed: Q8DlDYh3bC
+[Consumer-Thread-6] consumed: vqWpVnx4yS
+[Consumer-Thread-6] consumed: j9h1rPLW9n
+[Consumer-Thread-6] consumed: 7YgyQwjetO
+[Consumer-Thread-6] consumed: qoSgVD9yfE
+[Consumer-Thread-6] consumed: uFkI6jCMMA
+[Consumer-Thread-6] consumed: PfBqBe8duh
+[Producer-Thread-1] Putting POISON_PILL in the queue
+[Producer-Thread-7] Putting POISON_PILL in the queue
+[Consumer-Thread-5] consumed: vzfqLqJID4
+[Consumer-Thread-5] consumed: f1K0tnyLpG
+[Consumer-Thread-5] consumed: m9q3sC2LbN
+[Consumer-Thread-5] consumed: PqIGTBsweW
+[Consumer-Thread-5] Got POISON_PILL - Terminating Gracefully :) 
+[Producer-Thread-0] Putting POISON_PILL in the queue
+[Consumer-Thread-6] consumed: h6S3o2Dq3N
+[Producer-Thread-2] Putting POISON_PILL in the queue
+[Consumer-Thread-6] Got POISON_PILL - Terminating Gracefully :) 
+```
+
+#### Concurrent Maps
+
+One interface: `ConcurrentMap`
+
+Two implementations:
+
+- `ConcurrentHashMap`: JDK 7 & JDK 8
+- `ConcurrentSkipListMap`: JDK 6, no synchronization
 
 
