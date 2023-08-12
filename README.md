@@ -1143,11 +1143,123 @@ No of producers:[4], No of consumers:[4], poison pill:[POISON_PILL], poison pill
 
 #### Concurrent Maps
 
-One interface: `ConcurrentMap`
+> One interface: `ConcurrentMap`
+
+A `Map` providing **thread safety** and **atomicity** guarantees.
+
+ConcurrentMap implementations are:
+
+- Thread-safe maps
+- Efficient up to a certain number of threads
+- A number of efficient, parallel special operations
+
+ConcurrentMap defines compound actions as **one** atomic operations:
+
+- **putIfAbsent(key, value)**: If the specified key is not already associated with a value, associates it with the given
+  value
+- **remove(key, value)**: Removes the entry for a key only if currently mapped to a given value
+- **replace(key, value)**: Replaces the entry for a key only if currently mapped to some value
+- **replace(key, existingValue, newValue)**: Replaces the entry for a key only if currently mapped to a given value
 
 Two implementations:
 
-- `ConcurrentHashMap`: JDK 7 & JDK 8
-- `ConcurrentSkipListMap`: JDK 6, no synchronization
+- `ConcurrentHashMap`
+- `ConcurrentSkipListMap`
+
+**Hash Map internals**
+
+- A hashmap is built on an **array**.
+- Each index or cell in the array is called a **bucket**.
+
+![HashMap](HashMap.PNG)
+
+Adding a key / value pair to a map is a several steps process:
+
+- Compute the **hashcode** of the key
+- Check if the bucket is there or not (`hashcode % array_size`)
+- Check if the key is there or not (**append** the item to the linked list)
+- Update the map
+
+In a **concurrent** map, these steps must NOT be **interrupted** by another thread.
+
+The only way to guard an array-based structure is to **lock** the array. However, it would be very inefficient to block
+all the map.
+
+We need a design which should allow several threads on **different buckets** and should allow **concurrent reads**.
+
+**Solution**: Synchronizing on parts or segments of the array rather than the whole array
+
+![ConcurrentHashMapJDK7](ConcurrentHashMapJDK7.PNG)
+
+`ConcurrentHashMap` from **JDK 7**:
+
+- Built on a set of synchronized segments
+- Number of segments = concurrency level (16 - 64k)
+- This sets the number of threads that can use this map
+- The number of key / value pairs has to be (much) greater than the concurrency level
+
+`ConcurrentHashMap` from **JDK 8**:
+
+Implementation completely changed to handle heavy concurrency and millions of key / value pairs. It's still backward
+compatible with `ConcurrentHashMap` from **JDK 7**.
+
+Parallel methods implemented for **searching**:
+
+- `search(long parallelismThreshold, BiFunction<? super K,? super V,? extends U> searchFunction)`
+  Returns a non-null result from applying the given search function on each (key, value), or null if none.
+
+**parallelismThreshold** - the (estimated) number of elements needed for this operation to be executed in parallel
+**searchFunction** - a function returning a non-null result on success, else null
+
+Similar methods: `searchKeys()`, `searchValues()`, `searchEntries()`
+
+**Sample code snippet:**
+
+```
+        ConcurrentHashMap<Long, String> map = ...; // JDK 8
+        String result = map.search(10_000,
+                                   (key, value) ->
+                                           value.startsWith("a") ? "a" : null);
+```
+
+- The **first** parameter is the parallelism threshold
+- The **second** is the search operation to be applied
+
+Parallel methods implemented for **map-reduce**:
+
+- `reduce(long parallelismThreshold, BiFunction<? super K,? super V,? extends U> transformer, BiFunction<? super U,? super U,? extends U> reducer)`
+  Returns the result of accumulating the given transformation of all (key, value) pairs using the given reducer to
+  combine values, or null if none.
+
+**Sample code snippet:**
+
+```
+        ConcurrentHashMap<Long, List<String>> map = ...; // JDK 8
+        String result = map.reduce(10_000,
+                                   (key, value) -> value.size(),
+                                   (value1, value2) -> Integer.max(value1, value2)
+                                  );
+```
+
+- The first `BiFunction` maps to the element to be reduced
+- The second `BiFunction` reduces two elements together
+
+Parallel methods implemented for **for-each**:
+
+- `forEach(long parallelismThreshold, BiConsumer<? super K,? super V> action)`
+  Performs the given action for each (key, value).
+
+Similar methods: `forEachKeys()`, `forEachValues()`, `forEachEntry()`
+
+**Sample code snippet:**
+
+```
+        ConcurrentHashMap<Long, List<String>> map = ...; // JDK 8
+        String result = map.forEach(10_000,
+                                    (key, value) -> value.removeIf(s -> s.length() > 20)
+                                   );
+```
+
+- The `BiConsumer` is applied to all the key / value pairs of the map.
 
 
