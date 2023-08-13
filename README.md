@@ -13,6 +13,10 @@ Tools used:
 
 1. [CAS operation and Atomic classes](https://github.com/backstreetbrogrammer/34_AdvancedConcurrencyModule3#chapter-01-cas-operation-and-atomic-classes)
 2. [Concurrent Collections](https://github.com/backstreetbrogrammer/34_AdvancedConcurrencyModule3#chapter-02-concurrent-collections)
+    - [Concurrent Lists](https://github.com/backstreetbrogrammer/34_AdvancedConcurrencyModule3#concurrent-lists)
+    - [BlockingQueue Deep Dive](https://github.com/backstreetbrogrammer/34_AdvancedConcurrencyModule3#blockingqueue-deep-dive)
+    - [Concurrent Maps](https://github.com/backstreetbrogrammer/34_AdvancedConcurrencyModule3#concurrent-maps)
+    - [Concurrent Skip Lists](https://github.com/backstreetbrogrammer/34_AdvancedConcurrencyModule3#concurrent-skip-lists)
 
 ---
 
@@ -966,7 +970,7 @@ take that special poison pill message from a queue, it will finish execution gra
 
 **Solution**
 
-`Producer` class to generate random String and put into BlockingQueue:
+`Producer` class to generate random String and put into `BlockingQueue`:
 
 ```java
 import java.util.concurrent.BlockingQueue;
@@ -1336,4 +1340,48 @@ Set<String> set = ConcurrentHashMap.<String>newKeySet(); // JDK 8
 ```
 
 #### Concurrent Skip Lists
+
+> A scalable concurrent `ConcurrentNavigableMap` implementation.
+
+The map is **sorted** according to the natural ordering of its keys, or by a `Comparator` provided at map creation time,
+depending on which constructor is used.
+
+This class implements a concurrent variant of `SkipLists` providing expected average log(n) time cost for the
+`containsKey()`, `get()`, `put()` and `remove()` operations and their variants.
+
+Insertion, removal, update, and access operations safely execute concurrently by multiple threads.
+
+A skip list is a smart structure used to create linked lists which relies on **atomic** reference operations and **NO**
+synchronization.
+
+That can be used to create maps and sets:
+
+- `ConcurrentSkipListMap`
+- `ConcurrentSkipListSet`
+
+A skip list is a probabilistic data structure that allows `O(log n)` average complexity for search and for insertion
+within an ordered sequence of `n` elements. Thus, it can get the best features of a sorted array for **searching** while
+maintaining a linked list-like structure that allows **insertion**, which is not possible with a static array.
+
+**Linked List** takes `O(N)` to search for an element.
+
+![LinkedList](LinkedList.PNG)
+
+**Skip List** takes `O(log N)` to search for an element.
+
+![SkipList](SkipList.PNG)
+
+If we want to search for say `6`, we can do it in `3` steps which is `log 2^3`.
+
+---
+
+**To summarize**,
+
+- If we have very few **writes**, use **copy on write** structures
+- If we have **low** concurrency, we can just rely on simple synchronization techniques and locks
+- In **high** concurrency, **skip lists** are usable with many sortable objects, or **ConcurrentHashMap** for unordered
+  objects
+- **High** concurrency with **few** objects is always problematic because a lot of atomic references and advanced
+  synchronization techniques will waste a lot of CPU cycles rather than improving the performance
+- Best practice is to understand the problem and use case well and rely on Java Concurrent Collections API as suited 
 
